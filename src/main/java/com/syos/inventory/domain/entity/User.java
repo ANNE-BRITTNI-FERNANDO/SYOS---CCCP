@@ -167,7 +167,8 @@ public class User {
     
     private void setLastName(String lastName) {
         if (lastName == null || lastName.trim().isEmpty()) {
-            throw new ValidationException("Last name cannot be null or empty");
+            this.lastName = null; // Allow null last name
+            return;
         }
         if (lastName.trim().length() > 50) {
             throw new ValidationException("Last name cannot exceed 50 characters");

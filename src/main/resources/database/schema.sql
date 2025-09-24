@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS user (
     password_hash VARCHAR(255) NOT NULL,
     password_salt VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100),
     phone VARCHAR(15),
     address TEXT,
     role_id INTEGER NOT NULL,

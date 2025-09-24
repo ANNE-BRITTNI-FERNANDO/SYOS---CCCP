@@ -480,8 +480,14 @@ public class LoginUI {
      * Handle user management for admin users
      */
     private void handleUserManagement() {
-        System.out.println("  📋 User Management feature coming soon...");
-        pauseForUser();
+        try {
+            UserManagementUI userManagementUI = new UserManagementUI(scanner, currentUser, userService);
+            userManagementUI.displayMenu();
+        } catch (Exception e) {
+            System.err.println("❌ Error accessing user management: " + e.getMessage());
+            logger.severe("Error in user management: " + e.getMessage());
+            pauseForUser();
+        }
     }
     
     /**

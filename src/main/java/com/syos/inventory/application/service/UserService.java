@@ -72,6 +72,50 @@ public class UserService {
     }
     
     /**
+     * Create a new user with phone number
+     * @param username Username for new user
+     * @param password Password for new user
+     * @param firstName User's first name
+     * @param lastName User's last name (can be null)
+     * @param email User's email
+     * @param phone User's phone number (can be null)
+     * @param role User's role
+     * @return Created user
+     * @throws ValidationException if user data is invalid
+     * @throws BusinessException if user already exists
+     */
+    public User createUser(String username, String password, String firstName, 
+                          String lastName, String email, String phone, UserRole role) {
+        try {
+            Username userNameValue = new Username(username);
+            
+            // Check if user already exists
+            if (userRepository.findByUsername(userNameValue).isPresent()) {
+                throw new BusinessException("User already exists with username: " + username);
+            }
+            
+            Password passwordValue = new Password(password);
+            User user = new User(userNameValue, passwordValue, firstName, lastName, email, role);
+            
+            // Set phone if provided
+            if (phone != null && !phone.trim().isEmpty()) {
+                user.setPhone(phone.trim());
+            }
+            
+            User savedUser = userRepository.save(user);
+            logger.info("User created successfully: " + username);
+            
+            return savedUser;
+            
+        } catch (ValidationException | BusinessException e) {
+            throw e;
+        } catch (DatabaseException e) {
+            logger.severe("Error creating user " + username + ": " + e.getMessage());
+            throw new BusinessException("User service temporarily unavailable");
+        }
+    }
+    
+    /**
      * Create a new user
      * @param username Username for new user
      * @param password Password for new user
@@ -280,6 +324,39 @@ public class UserService {
         } catch (DatabaseException e) {
             logger.severe("Database error retrieving users by role " + role + ": " + e.getMessage());
             throw new BusinessException("Failed to retrieve users by role", e);
+        }
+    }
+    
+    /**
+     * Update user profile including phone number
+     * @param userId User ID
+     * @param firstName New first name
+     * @param lastName New last name (can be null)
+     * @param email New email
+     * @param phone New phone number (can be null)
+     * @return Updated user
+     * @throws EntityNotFoundException if user not found
+     */
+    public User updateUserProfile(Long userId, String firstName, String lastName, String email, String phone) {
+        try {
+            User user = getUserById(userId);
+            user.updateProfile(firstName, lastName, email);
+            
+            // Set phone number if provided
+            if (phone != null && !phone.trim().isEmpty()) {
+                user.setPhone(phone.trim());
+            }
+            
+            User updatedUser = userRepository.save(user);
+            logger.info("User profile updated successfully: " + user.getUsername().getValue());
+            
+            return updatedUser;
+            
+        } catch (DatabaseException e) {
+            logger.severe("Database error updating user profile " + userId + ": " + e.getMessage());
+            throw new BusinessException("Failed to update user profile", e);
+        } catch (EntityNotFoundException | ValidationException e) {
+            throw e;
         }
     }
 }
