@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS physical_inventory (
     location_id INTEGER NOT NULL,
     current_quantity INTEGER NOT NULL DEFAULT 0,
     min_threshold INTEGER DEFAULT 50,
-    shelf_capacity INTEGER DEFAULT 100,
+    location_capacity INTEGER DEFAULT 100,  -- Renamed from shelf_capacity for clarity
     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (batch_id) REFERENCES batch(batch_id),
     FOREIGN KEY (location_id) REFERENCES inventory_location(location_id),

@@ -17,6 +17,7 @@ public class LoginUI {
     private static final Logger logger = Logger.getLogger(LoginUI.class.getName());
     
     private final UserService userService;
+    private final ProductManagementServiceFixed productService;
     private final Scanner scanner;
     private User currentUser;
     
@@ -26,6 +27,7 @@ public class LoginUI {
      */
     public LoginUI(UserService userService) {
         this.userService = userService;
+        this.productService = new ProductManagementServiceFixed();
         this.scanner = new Scanner(System.in);
     }
     
@@ -323,7 +325,11 @@ public class LoginUI {
                     handleMenuOption3();
                     break;
                 case "4":
-                    handleMenuOption4();
+                    if (currentUser.hasRole(UserRole.ADMIN)) {
+                        handlePOSTerminal();
+                    } else {
+                        handleMenuOption4();
+                    }
                     break;
                 case "5":
                     if (currentUser.hasRole(UserRole.ADMIN)) {
@@ -336,6 +342,14 @@ public class LoginUI {
                 case "6":
                     if (currentUser.hasRole(UserRole.ADMIN)) {
                         handleMenuOption6();
+                    } else {
+                        System.out.println("  ⚠️  Invalid option. Please try again.");
+                        pauseForUser();
+                    }
+                    break;
+                case "7":
+                    if (currentUser.hasRole(UserRole.ADMIN)) {
+                        handleMenuOption7();
                     } else {
                         System.out.println("  ⚠️  Invalid option. Please try again.");
                         pauseForUser();
@@ -364,7 +378,43 @@ public class LoginUI {
         System.out.println("  ║                                                                      ║");
         System.out.println("  ║   User: " + String.format("%-25s", currentUser.getUsername().getValue()) + " Role: " + String.format("%-15s", currentUser.getRole().getDisplayName()) + "   ║");
         System.out.println("  ╚══════════════════════════════════════════════════════════════════════╝");
+        
+        // Display reorder alerts for admins
+        if (currentUser.hasRole(UserRole.ADMIN)) {
+            displayReorderAlerts();
+        }
+        
         System.out.println();
+    }
+    
+    /**
+     * Displays reorder alerts if any products need restocking
+     */
+    private void displayReorderAlerts() {
+        try {
+            var alerts = productService.getReorderAlerts();
+            if (!alerts.isEmpty()) {
+                System.out.println();
+                System.out.println("  ⚠️  INVENTORY ALERTS ⚠️");
+                System.out.println("  ╔══════════════════════════════════════════════════════════════════════╗");
+                
+                for (String alert : alerts) {
+                    String[] parts = alert.split(" - ");
+                    if (parts.length >= 2) {
+                        String productInfo = parts[0].replace("REORDER ALERT: ", "");
+                        String quantities = parts[1];
+                        
+                        System.out.println("  ║ 🔴 " + String.format("%-64s", productInfo) + " ║");
+                        System.out.println("  ║    " + String.format("%-64s", quantities) + " ║");
+                    }
+                }
+                
+                System.out.println("  ╚══════════════════════════════════════════════════════════════════════╝");
+            }
+        } catch (Exception e) {
+            // Don't show alerts if there's an error, just log it
+            System.err.println("Warning: Could not load inventory alerts");
+        }
     }
     
     /**
@@ -377,9 +427,10 @@ public class LoginUI {
         System.out.println("  │  1. Product Management                                              │");
         System.out.println("  │  2. User Management                                                 │");
         System.out.println("  │  3. Inventory Management                                            │");
-        System.out.println("  │  4. Reports & Analytics                                             │");
-        System.out.println("  │  5. System Configuration                                            │");
-        System.out.println("  │  6. Audit Logs                                                     │");
+        System.out.println("  │  4. POS Terminal                                                    │");
+        System.out.println("  │  5. Reports & Analytics                                             │");
+        System.out.println("  │  6. System Configuration                                            │");
+        System.out.println("  │  7. Audit Logs                                                     │");
         System.out.println("  │                                                                     │");
         System.out.println("  │  Q. Quit                                                            │");
         System.out.println("  └─────────────────────────────────────────────────────────────────────┘");
@@ -467,7 +518,7 @@ public class LoginUI {
      */
     private void handleProductManagement() {
         try {
-            ProductManagementServiceFixed productService = new ProductManagementServiceFixed();
+            // Use the existing productService field
             ProductManagementUI productUI = new ProductManagementUI(scanner, currentUser, productService);
             productUI.displayProductManagement();
         } catch (Exception e) {
@@ -507,15 +558,21 @@ public class LoginUI {
     }
     
     /**
-     * Handle menu option 3
+     * Handle menu option 3 - Inventory Management
      */
     private void handleMenuOption3() {
         if (currentUser.hasRole(UserRole.ADMIN)) {
-            System.out.println("  📊 Inventory Management feature coming soon...");
+            try {
+                InventoryManagementUI inventoryUI = new InventoryManagementUI(scanner, currentUser);
+                inventoryUI.start();
+            } catch (Exception e) {
+                System.out.println("  ❌ Error accessing Inventory Management: " + e.getMessage());
+                pauseForUser();
+            }
         } else {
             System.out.println("  📋 Product viewing feature coming soon...");
+            pauseForUser();
         }
-        pauseForUser();
     }
     
     /**
@@ -542,8 +599,29 @@ public class LoginUI {
      * Handle menu option 6 for admin users
      */
     private void handleMenuOption6() {
+        System.out.println("  ⚙️  System Configuration feature coming soon...");
+        pauseForUser();
+    }
+    
+    /**
+     * Handle menu option 7 for admin users (Audit Logs)
+     */
+    private void handleMenuOption7() {
         System.out.println("  📝 Audit Logs feature coming soon...");
         pauseForUser();
+    }
+    
+    /**
+     * Handle POS Terminal access
+     */
+    private void handlePOSTerminal() {
+        try {
+            POSTerminalUI posTerminal = new POSTerminalUI(scanner, currentUser);
+            posTerminal.start();
+        } catch (Exception e) {
+            System.out.println("  ❌ Error accessing POS Terminal: " + e.getMessage());
+            pauseForUser();
+        }
     }
     
     /**
