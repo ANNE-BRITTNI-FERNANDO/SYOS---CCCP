@@ -6,6 +6,7 @@ import com.syos.inventory.domain.entity.ProductNew;
 import com.syos.inventory.domain.entity.Category;
 import com.syos.inventory.domain.entity.Subcategory;
 import com.syos.application.services.ProductManagementServiceFixed;
+import com.syos.shared.patterns.strategy.*;
 import java.math.BigDecimal;
 import java.util.Scanner;
 import java.util.List;
@@ -223,14 +224,13 @@ public class ProductManagementUI {
         System.out.print("Quantity: ");
         String quantity = scanner.nextLine().trim();
         
-        displayStorageOptions();
-        System.out.print("Select storage location (1-2): ");
-        int storageChoice = readIntChoice();
-        
-        displayShelfConfiguration();
-        
         System.out.print("Expiry Date (YYYY-MM-DD) or 'N/A' for no expiry: ");
         String expiryDate = scanner.nextLine().trim();
+        
+        // Enhanced inventory type selection with Strategy Pattern
+        displayEnhancedInventoryTypeOptions();
+        System.out.print("Select inventory type (1-3): ");
+        int inventoryTypeChoice = readIntChoice();
         
         displayDiscountOptions();
         System.out.print("Select option (1-3): ");
@@ -266,6 +266,32 @@ public class ProductManagementUI {
             // Convert price to BigDecimal
             BigDecimal basePrice = new BigDecimal(priceInput);
             
+            // Convert quantity to integer for inventory configuration
+            int totalQuantity;
+            try {
+                totalQuantity = Integer.parseInt(quantity);
+            } catch (NumberFormatException e) {
+                System.out.println("? Error: Invalid quantity. Product not created.");
+                System.out.print("Press Enter to continue...");
+                scanner.nextLine();
+                return;
+            }
+            
+            // Configure inventory distribution based on selected strategy
+            InventoryTypeContext inventoryContext = new InventoryTypeContext();
+            inventoryContext.setStrategyByIndex(inventoryTypeChoice);
+            
+            InventoryTypeStrategy.InventoryConfiguration inventoryConfig = 
+                inventoryContext.configureInventory(totalQuantity);
+            
+            System.out.println("\nInventory Configuration Preview:");
+            System.out.println(inventoryConfig.getConfigurationSummary());
+            
+            // Only ask for shelf configuration if required
+            if (inventoryConfig.requiresShelfConfig()) {
+                displayShelfConfiguration();
+            }
+            
             // Get subcategory ID by code
             Long subcategoryId = getSubcategoryIdByCode(subcategoryCode);
             if (subcategoryId == null) {
@@ -275,31 +301,42 @@ public class ProductManagementUI {
                 return;
             }
             
-            // Create the product using the service with discount information
-            boolean success;
-            if (discountChoice == 2) {
-                // Fixed amount discount
-                success = productService.createProduct(
+            // Use the inventory configuration from the strategy
+            int physicalQty = inventoryConfig.getPhysicalQuantity();
+            int shelfQty = inventoryConfig.getShelfQuantity();
+            int onlineQty = inventoryConfig.getOnlineQuantity();
+            
+            // Create the product WITH inventory using the service
+            ProductNew createdProduct;
+            if (discountChoice == 1) {
+                // No discount - use the inventory creation method
+                createdProduct = productService.createProductWithInventory(
                     productName, description, subcategoryId, basePrice, unit, brand, 
-                    currentUser.getId(), 1, discountAmount, BigDecimal.ZERO
-                );
-            } else if (discountChoice == 3) {
-                // Percentage discount
-                success = productService.createProduct(
-                    productName, description, subcategoryId, basePrice, unit, brand, 
-                    currentUser.getId(), 2, discountPercent, BigDecimal.ZERO
+                    currentUser.getId(), physicalQty, shelfQty, onlineQty, null, null, expiryDate
                 );
             } else {
-                // No discount
-                success = productService.createProduct(
+                // Has discount - create product with inventory and then apply discount
+                createdProduct = productService.createProductWithInventory(
                     productName, description, subcategoryId, basePrice, unit, brand, 
-                    currentUser.getId()
+                    currentUser.getId(), physicalQty, shelfQty, onlineQty, null, null, expiryDate
                 );
+                
+                if (createdProduct != null) {
+                    // Apply discount after product and inventory creation
+                    String productCode = createdProduct.getProductCode();
+                    if (discountChoice == 2) {
+                        // Fixed discount amount
+                        productService.setFixedDiscount(productCode, discountAmount);
+                    } else if (discountChoice == 3) {
+                        // Percentage discount
+                        productService.setPercentageDiscount(productCode, discountPercent);
+                    }
+                }
             }
             
-            if (success) {
-                // Generate product code for display (this should come from the service)
-                String productCode = generateProductCode(subcategoryCode);
+            if (createdProduct != null) {
+                // Use the actual product code from the created product
+                String productCode = createdProduct.getProductCode();
                 
                 System.out.println();
                 System.out.println("PRODUCT CREATED SUCCESSFULLY!");
@@ -989,6 +1026,26 @@ public class ProductManagementUI {
         System.out.println("Storage Location:");
         System.out.println("1. Physical Store");
         System.out.println("2. Online Store");
+    }
+    
+    private void displayEnhancedInventoryTypeOptions() {
+        System.out.println();
+        System.out.println("INVENTORY TYPE SELECTION");
+        System.out.println("==================================================");
+        System.out.println("Choose how you want to manage this product's inventory:");
+        System.out.println();
+        System.out.println("1. Physical Store Only");
+        System.out.println("   Product stored in warehouse and shelf display.");
+        System.out.println("   Requires shelf capacity configuration.");
+        System.out.println();
+        System.out.println("2. Online Store Only");
+        System.out.println("   Product available exclusively online.");
+        System.out.println("   No physical storage or shelf management required.");
+        System.out.println();
+        System.out.println("3. Hybrid (Physical + Online)");
+        System.out.println("   Product available both in-store and online.");
+        System.out.println("   Inventory distributed across channels with shelf management.");
+        System.out.println();
     }
     
     private void displayShelfConfiguration() {

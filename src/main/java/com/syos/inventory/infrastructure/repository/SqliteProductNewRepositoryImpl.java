@@ -28,7 +28,7 @@ public class SqliteProductNewRepositoryImpl implements ProductNewRepository {
                     "final_price, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection conn = databaseManager.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setString(1, product.getProductCode());
             stmt.setString(2, product.getProductName());
@@ -48,9 +48,13 @@ public class SqliteProductNewRepositoryImpl implements ProductNewRepository {
                 throw new SQLException("Creating product failed, no rows affected.");
             }
 
-            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    product.setProductId(generatedKeys.getLong(1));
+            // Get the generated ID using last_insert_rowid() function for SQLite
+            String getIdSql = "SELECT last_insert_rowid()";
+            try (PreparedStatement idStmt = conn.prepareStatement(getIdSql);
+                 ResultSet rs = idStmt.executeQuery()) {
+                
+                if (rs.next()) {
+                    product.setProductId(rs.getLong(1));
                 } else {
                     throw new SQLException("Creating product failed, no ID obtained.");
                 }

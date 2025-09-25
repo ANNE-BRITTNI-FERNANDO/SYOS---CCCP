@@ -1,0 +1,256 @@
+package com.syos.inventory.application.service;
+
+import com.syos.inventory.domain.entity.ProductNew;
+import com.syos.inventory.domain.entity.Batch;
+import com.syos.inventory.infrastructure.repository.ProductNewRepository;
+import com.syos.inventory.infrastructure.repository.BatchRepository;
+import com.syos.inventory.infrastructure.repository.PhysicalInventoryRepository;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.logging.Logger;
+
+/**
+ * Enhanced Product Management Service with Batch Management
+ * Handles product creation with automatic batch creation and inventory distribution
+ */
+public class ProductManagementWithBatchService {
+    
+    private static final Logger logger = Logger.getLogger(ProductManagementWithBatchService.class.getName());
+    
+    private final ProductNewRepository productRepository;
+    private final BatchRepository batchRepository;
+    private final PhysicalInventoryRepository physicalInventoryRepository;
+    
+    // Inventory distribution percentages
+    private static final double WAREHOUSE_PERCENTAGE = 0.80; // 80% to warehouse
+    private static final double SHELF_PERCENTAGE = 0.20;     // 20% to shelf
+    
+    // Location IDs
+    private static final int WAREHOUSE_LOCATION_ID = 14;
+    private static final int SHELF_LOCATION_ID = 15;
+    
+    public ProductManagementWithBatchService(ProductNewRepository productRepository, 
+                                           BatchRepository batchRepository,
+                                           PhysicalInventoryRepository physicalInventoryRepository) {
+        this.productRepository = productRepository;
+        this.batchRepository = batchRepository;
+        this.physicalInventoryRepository = physicalInventoryRepository;
+    }
+    
+    /**
+     * Creates a new product with initial batch and inventory distribution
+     * 
+     * @param productName Product name
+     * @param description Product description
+     * @param brand Product brand
+     * @param basePrice Base price
+     * @param unitOfMeasure Unit of measure
+     * @param subcategoryId Subcategory ID
+     * @param createdBy User ID who created the product
+     * @param initialQuantity Initial quantity for first batch
+     * @param purchaseDate Date when batch was purchased
+     * @param expiryDate Expiry date (null for non-perishable items)
+     * @param sellingPrice Selling price for this batch
+     * @return Created ProductNew object with batch information
+     */
+    public ProductWithBatchResult createProductWithBatch(String productName, String description, 
+                                                        String brand, double basePrice, String unitOfMeasure,
+                                                        int subcategoryId, int createdBy, 
+                                                        int initialQuantity, LocalDate purchaseDate, 
+                                                        LocalDate expiryDate, double sellingPrice) {
+        
+        logger.info("Creating new product with batch: " + productName);
+        
+        try {
+            // 1. Generate product code
+            String productCode = generateProductCode(productName, brand);
+            
+            // 2. Calculate final price (considering discounts if any)
+            double finalPrice = basePrice; // Can be enhanced with discount logic
+            
+            // 3. Create product
+            ProductNew product = new ProductNew();
+            product.setProductCode(productCode);
+            product.setProductName(productName);
+            product.setDescription(description);
+            product.setBrand(brand);
+            product.setBasePrice(basePrice);
+            product.setUnitOfMeasure(unitOfMeasure);
+            product.setSubcategoryId(subcategoryId);
+            product.setDiscountPercentage(0.0);
+            product.setDiscountAmount(0.0);
+            product.setFinalPrice(finalPrice);
+            product.setActive(true);
+            product.setCreatedBy(createdBy);
+            
+            // Save product and get generated ID
+            ProductNew savedProduct = productRepository.save(product);
+            
+            // 4. Create initial batch
+            String batchNumber = generateBatchNumber(productCode);
+            
+            Batch batch = new Batch();
+            batch.setProductId(savedProduct.getProductId());
+            batch.setBatchNumber(batchNumber);
+            batch.setPurchaseDate(purchaseDate);
+            batch.setExpiryDate(expiryDate); // Can be null for non-perishable
+            batch.setQuantityReceived(initialQuantity);
+            batch.setSellingPrice(sellingPrice);
+            
+            // Save batch and get generated ID
+            Batch savedBatch = batchRepository.save(batch);
+            
+            // 5. Distribute inventory across locations
+            distributeInventoryToLocations(savedBatch.getBatchId(), initialQuantity);
+            
+            // 6. Create expiry alert if applicable
+            if (expiryDate != null) {
+                createExpiryAlertIfNeeded(savedBatch.getBatchId(), expiryDate);
+            }
+            
+            logger.info("Product created successfully: " + productCode + " with batch: " + batchNumber);
+            
+            return new ProductWithBatchResult(savedProduct, savedBatch, 
+                calculateWarehouseQuantity(initialQuantity), 
+                calculateShelfQuantity(initialQuantity));
+                
+        } catch (Exception e) {
+            logger.severe("Failed to create product with batch: " + e.getMessage());
+            throw new RuntimeException("Failed to create product with batch", e);
+        }
+    }
+    
+    /**
+     * Generates product code in PRD-XXXXXXXX format
+     */
+    private String generateProductCode(String productName, String brand) {
+        String prefix = generatePrefix(productName, brand);
+        int sequenceNumber = getNextSequenceNumber();
+        return String.format("PRD-%s%04d", prefix, sequenceNumber);
+    }
+    
+    /**
+     * Generates 4-character prefix from product name and brand
+     */
+    private String generatePrefix(String productName, String brand) {
+        String name = (productName != null ? productName : "").replaceAll("[^A-Za-z]", "").toUpperCase();
+        String brandStr = (brand != null ? brand : "").replaceAll("[^A-Za-z]", "").toUpperCase();
+        
+        StringBuilder prefix = new StringBuilder();
+        
+        // Get first 2 chars from product name
+        if (name.length() >= 2) {
+            prefix.append(name.substring(0, 2));
+        } else if (name.length() == 1) {
+            prefix.append(name).append("X");
+        } else {
+            prefix.append("XX");
+        }
+        
+        // Get first 2 chars from brand
+        if (brandStr.length() >= 2) {
+            prefix.append(brandStr.substring(0, 2));
+        } else if (brandStr.length() == 1) {
+            prefix.append(brandStr).append("X");
+        } else {
+            prefix.append("XX");
+        }
+        
+        return prefix.toString();
+    }
+    
+    /**
+     * Gets next sequence number for PRD products
+     */
+    private int getNextSequenceNumber() {
+        try {
+            int maxSequence = productRepository.getMaxSequenceNumberForPrefix("PRD-");
+            return maxSequence + 1;
+        } catch (Exception e) {
+            logger.warning("Could not get sequence number, starting from 1: " + e.getMessage());
+            return 1;
+        }
+    }
+    
+    /**
+     * Generates batch number: B-{PRODUCT_CODE}-{YYYYMMDDHHMI}
+     */
+    private String generateBatchNumber(String productCode) {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmm"));
+        return "B-" + productCode + "-" + timestamp;
+    }
+    
+    /**
+     * Distributes inventory to warehouse and shelf locations
+     */
+    private void distributeInventoryToLocations(int batchId, int totalQuantity) {
+        int warehouseQuantity = calculateWarehouseQuantity(totalQuantity);
+        int shelfQuantity = calculateShelfQuantity(totalQuantity);
+        
+        // Create warehouse inventory record
+        physicalInventoryRepository.createInventoryRecord(batchId, WAREHOUSE_LOCATION_ID, warehouseQuantity);
+        
+        // Create shelf inventory record  
+        physicalInventoryRepository.createInventoryRecord(batchId, SHELF_LOCATION_ID, shelfQuantity);
+        
+        logger.info(String.format("Inventory distributed - Warehouse: %d, Shelf: %d", warehouseQuantity, shelfQuantity));
+    }
+    
+    /**
+     * Calculates warehouse quantity (80% of total)
+     */
+    private int calculateWarehouseQuantity(int totalQuantity) {
+        return (int) Math.floor(totalQuantity * WAREHOUSE_PERCENTAGE);
+    }
+    
+    /**
+     * Calculates shelf quantity (20% of total)
+     */
+    private int calculateShelfQuantity(int totalQuantity) {
+        return (int) Math.ceil(totalQuantity * SHELF_PERCENTAGE);
+    }
+    
+    /**
+     * Creates expiry alert for perishable items
+     */
+    private void createExpiryAlertIfNeeded(int batchId, LocalDate expiryDate) {
+        // Create alert 30 days before expiry
+        LocalDate alertDate = expiryDate.minusDays(30);
+        if (alertDate.isAfter(LocalDate.now()) || alertDate.isEqual(LocalDate.now())) {
+            // Logic to create expiry alert in database
+            logger.info("Expiry alert created for batch " + batchId + " expiring on " + expiryDate);
+        }
+    }
+    
+    /**
+     * Result class containing product and batch information
+     */
+    public static class ProductWithBatchResult {
+        private final ProductNew product;
+        private final Batch batch;
+        private final int warehouseQuantity;
+        private final int shelfQuantity;
+        
+        public ProductWithBatchResult(ProductNew product, Batch batch, int warehouseQuantity, int shelfQuantity) {
+            this.product = product;
+            this.batch = batch;
+            this.warehouseQuantity = warehouseQuantity;
+            this.shelfQuantity = shelfQuantity;
+        }
+        
+        // Getters
+        public ProductNew getProduct() { return product; }
+        public Batch getBatch() { return batch; }
+        public int getWarehouseQuantity() { return warehouseQuantity; }
+        public int getShelfQuantity() { return shelfQuantity; }
+        public int getTotalQuantity() { return warehouseQuantity + shelfQuantity; }
+        
+        @Override
+        public String toString() {
+            return String.format("Product: %s, Batch: %s, Warehouse: %d, Shelf: %d", 
+                product.getProductCode(), batch.getBatchNumber(), warehouseQuantity, shelfQuantity);
+        }
+    }
+}

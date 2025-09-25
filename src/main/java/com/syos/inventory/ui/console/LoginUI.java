@@ -4,6 +4,8 @@ import com.syos.inventory.application.service.UserService;
 import com.syos.inventory.domain.entity.User;
 import com.syos.inventory.domain.value.UserRole;
 import com.syos.application.services.ProductManagementServiceFixed;
+import com.syos.presentation.ui.OnlineCustomerUI;
+import com.syos.inventory.infrastructure.database.DatabaseManager;
 
 import java.util.Scanner;
 import java.util.logging.Logger;
@@ -71,33 +73,51 @@ public class LoginUI {
             System.out.println("  └─────────────────────────────────────────────────────────────────────┘");
             System.out.println();
             System.out.println("  Please select an option:");
-            System.out.println("  1. Login");
-            System.out.println("  2. Register (As a Customer)");
-            System.out.println("  3. Exit");
+            System.out.println("  1. 🔐 Staff/Customer Login");
+            System.out.println("  2. 👤 Register (New Customer)");
+            System.out.println("  3. 🛒 Guest Shopping (Online Store)");
+            System.out.println("  4. 🚪 Exit");
             System.out.println();
-            System.out.print("  Enter your choice (1-3): ");
+            System.out.print("  Enter your choice (1-4): ");
             
             try {
-                String choice = scanner.nextLine().trim();
-                
-                switch (choice) {
-                    case "1":
-                        handleLogin();
-                        return;
-                    case "2":
-                        handleRegistration();
-                        break;
-                    case "3":
-                        exitApplication();
-                        return;
-                    default:
-                        System.out.println("  ⚠️  Invalid choice. Please enter 1, 2, or 3.");
-                        System.out.println();
-                        break;
+                // Check if scanner has input available
+                if (scanner.hasNextLine()) {
+                    String choice = scanner.nextLine().trim();
+                    
+                    switch (choice) {
+                        case "1":
+                            handleLogin();
+                            return;
+                        case "2":
+                            handleRegistration();
+                            break;
+                        case "3":
+                            handleOnlineStore();
+                            break;
+                        case "4":
+                            exitApplication();
+                            return;
+                        default:
+                            System.out.println("  ⚠️  Invalid choice. Please enter 1, 2, 3, or 4.");
+                            System.out.println();
+                            break;
+                    }
+                } else {
+                    System.out.println("  ❌ Input stream error. Restarting menu...");
+                    System.out.print("  Enter your choice (1-4): ");
+                    continue;
                 }
             } catch (Exception e) {
                 System.out.println("  ❌ Error occurred: " + e.getMessage());
-                System.out.println();
+                System.out.println("  Press Enter to continue...");
+                try {
+                    if (scanner.hasNextLine()) {
+                        scanner.nextLine();
+                    }
+                } catch (Exception ignored) {
+                    // Ignore scanner issues during error handling
+                }
             }
         }
     }
@@ -162,6 +182,33 @@ public class LoginUI {
         }
     }
     
+    /**
+     * Handles online store access for customers
+     */
+    private void handleOnlineStore() {
+        clearScreen();
+        System.out.println("  ┌─────────────────────────────────────────────────────────────────────┐");
+        System.out.println("  │                        🛒 ONLINE STORE                             │");
+        System.out.println("  └─────────────────────────────────────────────────────────────────────┘");
+        System.out.println();
+        
+        try {
+            // Get database path from DatabaseManager and construct URL
+            String databasePath = DatabaseManager.getInstance().getDatabasePath();
+            String databaseUrl = "jdbc:sqlite:" + databasePath;
+            
+            // Create and start online customer UI
+            OnlineCustomerUI onlineUI = new OnlineCustomerUI(scanner, databaseUrl);
+            onlineUI.displayOnlineStore();
+            
+        } catch (Exception e) {
+            System.out.println("  ❌ Error accessing online store: " + e.getMessage());
+            System.out.println();
+            System.out.print("  Press Enter to continue...");
+            scanner.nextLine();
+        }
+    }
+
     /**
      * Handles customer registration process
      */
@@ -304,21 +351,38 @@ public class LoginUI {
             }
             
             System.out.print("  Select an option: ");
-            String choice = scanner.nextLine().trim();
+            String choice = "";
+            try {
+                if (scanner.hasNextLine()) {
+                    choice = scanner.nextLine().trim();
+                } else {
+                    System.out.println("  ❌ Input stream error. Please try again.");
+                    continue;
+                }
+            } catch (Exception e) {
+                System.out.println("  ❌ Input error: " + e.getMessage());
+                continue;
+            }
             
             switch (choice.toLowerCase()) {
                 case "1":
                     if (currentUser.hasRole(UserRole.ADMIN)) {
                         handleProductManagement();
+                    } else if (currentUser.hasRole(UserRole.CASHIER)) {
+                        handleMenuOption3(); // Inventory Management for Cashier
                     } else {
-                        handleMenuOption1();
+                        // For customers, this shouldn't be reached as they go directly to Online Store
+                        handleOnlineStore();
                     }
                     break;
                 case "2":
                     if (currentUser.hasRole(UserRole.ADMIN)) {
                         handleUserManagement();
+                    } else if (currentUser.hasRole(UserRole.CASHIER)) {
+                        handleMenuOption2(); // Process Sales for Cashier
                     } else {
-                        handleMenuOption2();
+                        // For customers, this shouldn't be reached as they go directly to Online Store
+                        handleOnlineStore();
                     }
                     break;
                 case "3":
@@ -350,6 +414,14 @@ public class LoginUI {
                 case "7":
                     if (currentUser.hasRole(UserRole.ADMIN)) {
                         handleMenuOption7();
+                    } else {
+                        System.out.println("  ⚠️  Invalid option. Please try again.");
+                        pauseForUser();
+                    }
+                    break;
+                case "8":
+                    if (currentUser.hasRole(UserRole.ADMIN)) {
+                        handleOnlineStore();
                     } else {
                         System.out.println("  ⚠️  Invalid option. Please try again.");
                         pauseForUser();
@@ -431,6 +503,7 @@ public class LoginUI {
         System.out.println("  │  5. Reports & Analytics                                             │");
         System.out.println("  │  6. System Configuration                                            │");
         System.out.println("  │  7. Audit Logs                                                     │");
+        System.out.println("  │  8. 🛒 Online Store (Customer View)                                │");
         System.out.println("  │                                                                     │");
         System.out.println("  │  Q. Quit                                                            │");
         System.out.println("  └─────────────────────────────────────────────────────────────────────┘");
@@ -454,18 +527,23 @@ public class LoginUI {
     }
     
     /**
-     * Displays user menu options
+     * Displays user menu options - redirects customers directly to Online Store
      */
     private void displayUserMenu() {
+        // For customers, redirect directly to Online Store
         System.out.println("  ┌─────────────────────────────────────────────────────────────────────┐");
-        System.out.println("  │                         USER MENU                                  │");
-        System.out.println("  ├─────────────────────────────────────────────────────────────────────┤");
-        System.out.println("  │  1. View Inventory                                                  │");
-        System.out.println("  │  2. Search Items                                                    │");
-        System.out.println("  │                                                                     │");
-        System.out.println("  │  Q. Quit                                                            │");
+        System.out.println("  │                     CUSTOMER ACCESS                                │");
         System.out.println("  └─────────────────────────────────────────────────────────────────────┘");
         System.out.println();
+        System.out.println("  Welcome to SYOS Online Store! Redirecting you to shopping...");
+        System.out.println();
+        
+        try {
+            Thread.sleep(1500); // Brief pause for user to read message
+            handleOnlineStore();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
     
     /**

@@ -24,6 +24,8 @@ public class Product {
     private String brand;
     private String unit; // e.g., "kg", "piece", "liter"
     private boolean isActive;
+    private Integer customShelfCapacity; // Custom capacity for this product on shelves
+    private Integer reorderLevel; // Minimum quantity before reorder alert (default: 50)
     private final Timestamp createdAt;
     private Timestamp updatedAt;
     
@@ -54,6 +56,8 @@ public class Product {
         this.createdAt = Timestamp.now();
         this.updatedAt = this.createdAt;
         this.isActive = true; // New products are active by default
+        this.reorderLevel = 50; // Default reorder level
+        this.customShelfCapacity = null; // No custom capacity by default
         
         setName(name);
         setDescription(description);
@@ -61,6 +65,38 @@ public class Product {
         setCategory(category);
         setBrand(brand);
         setUnit(unit);
+    }
+    
+    /**
+     * Creates a new Product entity with custom shelf capacity and reorder level.
+     * 
+     * @param productCode the unique product code
+     * @param name the product name
+     * @param description the product description
+     * @param price the product price
+     * @param category the product category
+     * @param brand the product brand
+     * @param unit the unit of measurement
+     * @param customShelfCapacity custom shelf capacity for this product
+     * @param reorderLevel minimum quantity before reorder alert
+     * @throws IllegalArgumentException if any parameter violates business rules
+     */
+    public Product(ProductCode productCode, String name, String description, 
+                   Money price, String category, String brand, String unit,
+                   Integer customShelfCapacity, Integer reorderLevel) {
+        this.productCode = Objects.requireNonNull(productCode, "Product code cannot be null");
+        this.createdAt = Timestamp.now();
+        this.updatedAt = this.createdAt;
+        this.isActive = true; // New products are active by default
+        
+        setName(name);
+        setDescription(description);
+        setPrice(price);
+        setCategory(category);
+        setBrand(brand);
+        setUnit(unit);
+        setCustomShelfCapacity(customShelfCapacity);
+        setReorderLevel(reorderLevel);
     }
     
     /**
@@ -75,16 +111,21 @@ public class Product {
      * @param brand the product brand
      * @param unit the unit of measurement
      * @param isActive the active status
+     * @param customShelfCapacity custom shelf capacity for this product
+     * @param reorderLevel minimum quantity before reorder alert
      * @param createdAt the creation timestamp
      * @param updatedAt the last update timestamp
      */
     public Product(ProductCode productCode, String name, String description, 
                    Money price, String category, String brand, String unit,
-                   boolean isActive, Timestamp createdAt, Timestamp updatedAt) {
+                   boolean isActive, Integer customShelfCapacity, Integer reorderLevel,
+                   Timestamp createdAt, Timestamp updatedAt) {
         this.productCode = Objects.requireNonNull(productCode, "Product code cannot be null");
         this.createdAt = Objects.requireNonNull(createdAt, "Created at cannot be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "Updated at cannot be null");
         this.isActive = isActive;
+        this.customShelfCapacity = customShelfCapacity;
+        this.reorderLevel = reorderLevel != null ? reorderLevel : 50; // Default to 50 if null
         
         setName(name);
         setDescription(description);
@@ -380,6 +421,91 @@ public class Product {
      */
     public boolean canBeSold() {
         return isActive && price != null && !price.isZero();
+    }
+    
+    /**
+     * Gets the custom shelf capacity.
+     * 
+     * @return the custom shelf capacity, or null if using default capacity
+     */
+    public Integer getCustomShelfCapacity() {
+        return customShelfCapacity;
+    }
+    
+    /**
+     * Sets the custom shelf capacity for this product.
+     * 
+     * @param customShelfCapacity the custom shelf capacity, or null to use default
+     * @throws IllegalArgumentException if capacity is negative
+     */
+    public void setCustomShelfCapacity(Integer customShelfCapacity) {
+        if (customShelfCapacity != null && customShelfCapacity < 0) {
+            throw new IllegalArgumentException("Custom shelf capacity cannot be negative");
+        }
+        this.customShelfCapacity = customShelfCapacity;
+        updateTimestamp();
+    }
+    
+    /**
+     * Gets the reorder level.
+     * 
+     * @return the reorder level
+     */
+    public Integer getReorderLevel() {
+        return reorderLevel;
+    }
+    
+    /**
+     * Sets the reorder level for this product.
+     * 
+     * @param reorderLevel the minimum quantity before reorder alert
+     * @throws IllegalArgumentException if reorder level is null or negative
+     */
+    public void setReorderLevel(Integer reorderLevel) {
+        if (reorderLevel == null || reorderLevel < 0) {
+            throw new IllegalArgumentException("Reorder level cannot be null or negative");
+        }
+        this.reorderLevel = reorderLevel;
+        updateTimestamp();
+    }
+    
+    /**
+     * Checks if the product needs to be reordered based on current quantity.
+     * 
+     * @param currentQuantity the current total quantity in inventory
+     * @return true if current quantity is at or below the reorder level
+     */
+    public boolean needsReorder(int currentQuantity) {
+        return currentQuantity <= reorderLevel;
+    }
+    
+    /**
+     * Gets the effective shelf capacity for this product.
+     * Returns custom capacity if set, otherwise a default based on category.
+     * 
+     * @return the effective shelf capacity
+     */
+    public int getEffectiveShelfCapacity() {
+        if (customShelfCapacity != null) {
+            return customShelfCapacity;
+        }
+        
+        // Default capacities based on category
+        if (category != null) {
+            switch (category.toLowerCase()) {
+                case "electronics":
+                    return 20;
+                case "food & beverages":
+                    return 100;
+                case "laundry products":
+                    return 50;
+                case "general items":
+                    return 75;
+                default:
+                    return 30;
+            }
+        }
+        return 30; // Default capacity
     }
     
     /**
